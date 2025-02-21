@@ -28,6 +28,7 @@ from email.generator import Generator
 
 from Mailman import mm_cfg
 from Mailman.Message import Message
+from Mailman import Utils
 
 
 def _safeparser(fp):
@@ -51,12 +52,30 @@ class Mailbox(mailbox.mbox):
         # Check the last character of the file and write a newline if it isn't
         # a newline (but not at the beginning of an empty file).
         with open(self.filepath, 'r+') as fileh:
-            content = fileh.read()
+            try:
+                content = fileh.read()
+            except UnicodeDecodeError as e:
+                # This exception ususally means the file is not in UTF-8 format.
+                # We need to determine the encoding, then save the file back to disk as UTF-8.
+                fileh.close()
+
+                current_encoding = Utils.get_current_encoding(self.filepath)
+                with open(self.filepath, 'rb') as f:
+                    raw = f.read()
+
+                content = raw.decode(current_encoding)
+
+                with open(self.filepath, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+                fileh = open(self.filepath, 'r+')
+
             if content:
                 if content[-1] != '\n':
                     fileh.write('\n')
             # Create a Generator instance to write the message to the file
             g = Generator(fileh)
+            Utils.set_cte_if_missing(msg)
             g.flatten(msg, unixfrom=True)
             # Add one more trailing newline for separation with the next message
             # to be appended to the mbox.
